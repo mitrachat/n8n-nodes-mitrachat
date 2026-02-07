@@ -1,0 +1,49 @@
+{
+  "name": "n8n-nodes-mitrachat",
+  "version": "0.1.0",
+  "description": "n8n community nodes for MitraChat AI platform",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "mitrachat",
+    "ai",
+    "chatbot"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/mitrachat/n8n-nodes-mitrachat",
+  "author": {
+    "name": "MitraChat"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mitrachat/n8n-nodes-mitrachat.git"
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/MitraChatApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/MitraChatAgent/MitraChatAgent.node.js",
+      "dist/nodes/MitraChatProviderTrigger/MitraChatProviderTrigger.node.js",
+      "dist/nodes/MitraChatSendMessage/MitraChatSendMessage.node.js"
+    ]
+  },
+  "devDependencies": {
+    "n8n-workflow": "^1.0.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}

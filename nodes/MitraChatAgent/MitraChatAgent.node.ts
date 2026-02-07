@@ -11,7 +11,7 @@ export class MitraChatAgent implements INodeType {
   description: INodeTypeDescription = {
     displayName: "MitraChat Agent",
     name: "mitraChatAgent",
-    icon: "file:mitrachat-agent.svg",
+    icon: "file:MitraChatAgent.svg",
     group: ["transform"],
     version: 1,
     description: "Generate AI response using a MitraChat agent",

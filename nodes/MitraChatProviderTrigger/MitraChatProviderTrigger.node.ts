@@ -21,7 +21,7 @@ export class MitraChatProviderTrigger implements INodeType {
   description: INodeTypeDescription = {
     displayName: "MitraChat Provider Trigger",
     name: "mitraChatProviderTrigger",
-    icon: "file:mitrachat-trigger.svg",
+    icon: "file:MitraChatProviderTrigger.svg",
     group: ["trigger"],
     version: 1,
     description:

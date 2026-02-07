@@ -20,7 +20,7 @@
   },
   "main": "index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp nodes/MitraChatAgent/MitraChatAgent.svg dist/nodes/MitraChatAgent/ && cp nodes/MitraChatProviderTrigger/MitraChatProviderTrigger.svg dist/nodes/MitraChatProviderTrigger/ && cp nodes/MitraChatSendMessage/MitraChatSendMessage.svg dist/nodes/MitraChatSendMessage/",
     "dev": "tsc --watch",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build"

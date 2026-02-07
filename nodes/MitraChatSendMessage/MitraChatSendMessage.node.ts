@@ -11,7 +11,7 @@ export class MitraChatSendMessage implements INodeType {
   description: INodeTypeDescription = {
     displayName: "MitraChat Send Message",
     name: "mitraChatSendMessage",
-    icon: "file:mitrachat-send.svg",
+    icon: "file:MitraChatSendMessage.svg",
     group: ["output"],
     version: 1,
     description: "Send a message to a user via Telegram, WhatsApp, or WebChat",

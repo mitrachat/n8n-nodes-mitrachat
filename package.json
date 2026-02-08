@@ -20,7 +20,7 @@
   },
   "main": "index.js",
   "scripts": {
-    "build": "tsc && cp nodes/MitraChatAgent/MitraChatAgent.svg dist/nodes/MitraChatAgent/ && cp nodes/MitraChatProviderTrigger/MitraChatProviderTrigger.svg dist/nodes/MitraChatProviderTrigger/ && cp nodes/MitraChatSendMessage/MitraChatSendMessage.svg dist/nodes/MitraChatSendMessage/",
+    "build": "tsc && cp nodes/MitraChatAgent/MitraChatAgent.svg dist/nodes/MitraChatAgent/ && cp nodes/MitraChatProviderTrigger/MitraChatProviderTrigger.svg dist/nodes/MitraChatProviderTrigger/ && cp nodes/MitraChatSendMessage/MitraChatSendMessage.svg dist/nodes/MitraChatSendMessage/ && cp nodes/MitraChatSendTyping/MitraChatSendTyping.svg dist/nodes/MitraChatSendTyping/",
     "dev": "tsc --watch",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build"
@@ -36,7 +36,8 @@
     "nodes": [
       "dist/nodes/MitraChatAgent/MitraChatAgent.node.js",
       "dist/nodes/MitraChatProviderTrigger/MitraChatProviderTrigger.node.js",
-      "dist/nodes/MitraChatSendMessage/MitraChatSendMessage.node.js"
+      "dist/nodes/MitraChatSendMessage/MitraChatSendMessage.node.js",
+      "dist/nodes/MitraChatSendTyping/MitraChatSendTyping.node.js"
     ]
   },
   "devDependencies": {

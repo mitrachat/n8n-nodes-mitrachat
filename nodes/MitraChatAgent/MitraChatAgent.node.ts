@@ -14,7 +14,8 @@ export class MitraChatAgent implements INodeType {
     icon: "file:MitraChatAgent.svg",
     group: ["transform"],
     version: 1,
-    description: "Generate AI response using a MitraChat agent",
+    description:
+      "Calls a selected MitraChat agent directly for an AI response. Does not run the full provider AI queue, session routing, or app automation hooks.",
     defaults: { name: "MitraChat Agent" },
     inputs: ["main"],
     outputs: ["main"],
@@ -97,29 +98,35 @@ export class MitraChatAgent implements INodeType {
       const providerId = this.getNodeParameter("providerId", i, "") as string;
       const chatId = this.getNodeParameter("chatId", i, "") as string;
 
-      const response = await this.helpers.request({
-        method: "POST",
-        url: `${credentials.baseUrl}/api/n8n/agents/${agentId}/generate`,
-        headers: {
-          "X-API-Key": credentials.apiKey as string,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message,
-          threadId: threadId || undefined,
-          providerId: providerId || undefined,
-          chatId: chatId || undefined,
-        }),
-        json: true,
-      });
+      try {
+        const response = await this.helpers.httpRequest({
+          method: "POST",
+          url: `${credentials.baseUrl}/api/n8n/agents/${agentId}/generate`,
+          headers: {
+            "X-API-Key": credentials.apiKey as string,
+            "Content-Type": "application/json",
+          },
+          body: {
+            message,
+            threadId: threadId || undefined,
+            providerId: providerId || undefined,
+            chatId: chatId || undefined,
+          },
+          json: true,
+        });
 
-      returnData.push({
-        json: {
-          response: response.text,
-          model: response.model,
-          creditsDeducted: response.creditsDeducted,
-        },
-      });
+        returnData.push({
+          json: {
+            response: response.text,
+            model: response.model,
+            creditsDeducted: response.creditsDeducted,
+          },
+          pairedItem: { item: i },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`MitraChat Agent API error: ${message}`);
+      }
     }
 
     return [returnData];

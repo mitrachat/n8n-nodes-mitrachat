@@ -15,6 +15,24 @@ interface WebhookBody {
   userId?: number | string;
   username?: string;
   timestamp: string;
+  event?: string;
+  occurredAt?: string;
+  organizationId?: string;
+  replyReference?: {
+    sender: "user" | "agent" | "system";
+    senderLabel: string;
+    content?: string;
+    attachmentLabel?: string;
+  };
+  attachments?: Array<{
+    type: "image" | "file";
+    name: string;
+    mimeType: string;
+    size: number;
+    url?: string;
+    dataUrl?: string;
+  }>;
+  data?: Record<string, unknown>;
 }
 
 export class MitraChatProviderTrigger implements INodeType {
@@ -25,7 +43,7 @@ export class MitraChatProviderTrigger implements INodeType {
     group: ["trigger"],
     version: 1,
     description:
-      "Triggers when a message is received from Telegram, WhatsApp, or WebChat",
+      "Triggers when a message is received from a configured MitraChat provider. Set the provider's outbound webhook URL to this n8n webhook URL. Works with Telegram, WhatsApp, WebChat, and other supported providers.",
     defaults: { name: "MitraChat Provider Trigger" },
     inputs: [],
     outputs: ["main"],
@@ -75,7 +93,16 @@ export class MitraChatProviderTrigger implements INodeType {
   };
 
   async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
+    const selectedProviderId = this.getNodeParameter("providerId") as string;
     const bodyData = this.getBodyData() as unknown as WebhookBody;
+
+    if (!bodyData?.providerId) {
+      return { workflowData: [[]] };
+    }
+
+    if (bodyData.providerId !== selectedProviderId) {
+      return { workflowData: [[]] };
+    }
 
     return {
       workflowData: [
@@ -87,6 +114,12 @@ export class MitraChatProviderTrigger implements INodeType {
           userId: bodyData.userId,
           username: bodyData.username,
           timestamp: bodyData.timestamp,
+          event: bodyData.event,
+          occurredAt: bodyData.occurredAt,
+          organizationId: bodyData.organizationId,
+          replyReference: bodyData.replyReference,
+          attachments: bodyData.attachments,
+          data: bodyData.data,
         }),
       ],
     };

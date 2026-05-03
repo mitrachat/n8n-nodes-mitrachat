@@ -1,12 +1,23 @@
 # MitraChat n8n Community Nodes
 
-n8n community nodes for integrating with MitraChat AI platform. Connect Telegram, WhatsApp, and WebChat providers to n8n workflows with AI agent capabilities.
+n8n community nodes for integrating with MitraChat AI platform. Connect Telegram, WhatsApp, and WebChat providers to n8n workflows with AI agent capabilities, conversation control, and contact management.
 
 ## Features
 
-- **MitraChatProviderTrigger** — Webhook trigger for incoming messages from Telegram/WhatsApp/WebChat
+- **MitraChatProviderTrigger** — Webhook trigger for incoming messages from Telegram/WhatsApp/WebChat with provider scoping
 - **MitraChatAgent** — Generate AI responses using MitraChat agents with credit-based billing
-- **MitraChatSendMessage** — Send messages back to users via their original provider
+- **MitraChatSendMessage** — Send messages back to users via their original provider with optional CRM recording
+- **MitraChatSendTyping** — Send typing indicators before replies
+- **MitraChatConversation** — Inspect and control CRM conversations (messages, notes, tags, control mode, handover)
+- **MitraChatContact** — Enrich and sync contact records (upsert, tags, notes, metadata)
+
+## Operating Modes
+
+### Sidecar Mode
+Provider has n8n webhook enabled and may also have a default agent or automation rules configured. n8n receives inbound events for logging, spreadsheet sync, external CRM sync, alerts, or enrichment. MitraChat AI and rules continue normally alongside n8n.
+
+### n8n-Owned Mode
+Provider has n8n webhook enabled, CRM may be enabled, and **no provider default agent** is set. MitraChat saves inbound CRM messages and emits to n8n; n8n decides whether to call `MitraChatAgent`, third-party services, and `MitraChatSendMessage`.
 
 ## Prerequisites
 
@@ -97,31 +108,51 @@ docker run -it --rm \
    - **Base URL**: Your MitraChat instance (e.g., `https://api.mitrachat.id`)
 5. Click **"Test"** to verify connectivity
 
+## Provider Setup Flow
+
+1. Create a provider in MitraChat (Telegram, WhatsApp, WebChat, etc.)
+2. Enable **n8n Integration** on the provider
+3. Copy the n8n trigger webhook URL into the provider's **Outbound Webhook URL** field
+4. Enable **CRM** on the provider if you want inbox history
+5. Leave **Default Agent** empty for n8n-owned mode, or select an agent for sidecar mode
+
+## CRM Behavior
+
+- **Inbound messages** are saved automatically when provider CRM is enabled
+- **Outbound n8n messages** are saved when `Record To CRM` is enabled on `MitraChatSendMessage`
+- Provider send success is **not** rolled back by CRM persistence failure
+
 ## Nodes Usage
 
 ### MitraChatProviderTrigger
 
-Triggers a workflow when a message arrives from any connected provider.
+Triggers a workflow when a message arrives from the **selected** provider. Only emits workflow data when the incoming payload matches the configured provider.
 
 **Output Fields:**
 
 - `providerId` — Provider that received the message
-- `providerType` — telegram | whatsapp | webchat
+- `providerType` — telegram | webchat | gowa | waba | waha
 - `chatId` — Conversation identifier
 - `message` — Text content
 - `userId` — User identifier (if available)
-- `username` — Username (Telegram only)
+- `username` — Username (if available)
 - `timestamp` — ISO timestamp
+- `event` — Event identifier (e.g. "message.received")
+- `occurredAt` — ISO timestamp of when the event was dispatched
+- `organizationId` — MitraChat organization ID
+- `replyReference` — Quoted message context
+- `attachments` — Array of attachment objects
+- `data` — Generic forward-compatible data envelope
 
 **Example Workflow:**
 
 ```
-[MitraChatProviderTrigger] → [MitraChatAgent] → [MitraChatSendMessage]
+[MitraChatProviderTrigger] → [MitraChatAgent] → [MitraChatSendTyping] → [MitraChatSendMessage]
 ```
 
 ### MitraChatAgent
 
-Generates AI response using a MitraChat agent. Credits are deducted automatically based on model consumption rate.
+Generates AI response using a MitraChat agent **directly**. Credits are deducted automatically based on model consumption rate. This node **does not** run the full provider AI queue, session routing, or app automation hooks.
 
 **Parameters:**
 
@@ -141,13 +172,154 @@ Generates AI response using a MitraChat agent. Credits are deducted automaticall
 
 ### MitraChatSendMessage
 
-Sends a message back to the user via their original provider.
+Sends a message back to the user via their original provider with optional CRM recording.
 
 **Parameters:**
 
 - **Provider** — Select from your enabled providers
 - **Chat ID** — Conversation ID (use `{{ $json.chatId }}`)
 - **Message** — Text to send (use `{{ $json.response }}` from agent)
+- **Record To CRM** — Save outbound message to MitraChat CRM history (default: true)
+- **Reply To External Message ID** — Optional external message ID to reply to
+- **Attachment** — Optional file/image attachment (kind, filename, mimeType, size, dataUrl)
+
+**Output Fields:**
+
+- `success` — Whether provider send succeeded
+- `providerId` — Provider used
+- `chatId` — Chat ID
+- `externalMessageId` — Provider-assigned message ID
+- `recordedMessageId` — MitraChat CRM message ID (if recorded)
+- `crmRecordError` — Error message if CRM recording failed after send
+
+### MitraChatSendTyping
+
+Sends a typing indicator to the user via Telegram, WebChat, or GOWA.
+
+**Parameters:**
+
+- **Provider** — Select from your enabled providers
+- **Chat ID** — Conversation ID
+- **Is Typing** — Show (true) or hide (false) typing indicator
+
+### MitraChatConversation
+
+Inspect and control MitraChat CRM conversations declaratively.
+
+**Operations:**
+
+- **Get** — Resolve a conversation by `providerId + chatId` or `chatroomId`
+- **Get Messages** — Fetch recent messages with pagination
+- **Add Note** — Add an internal note to the conversation contact
+- **Set Tags** — Replace all contact tags for the conversation
+- **Set Control Mode** — Set `ai_owned`, `waiting_admin`, or `human_owned`
+- **Request Handover** — Trigger admin handover
+
+**Example Workflow:**
+
+```
+[MitraChatProviderTrigger] → [MitraChatConversation:Get] → [Google Sheets:Append]
+```
+
+### MitraChatContact
+
+Enrich and sync MitraChat contact records declaratively.
+
+**Operations:**
+
+- **Get** — Resolve a contact by `contactId`, `phone`, or `email`
+- **Upsert** — Create or update a contact
+- **Add Tags** — Append tags to a contact
+- **Remove Tags** — Remove tags from a contact
+- **Add Note** — Append a note to a contact
+- **Update Metadata** — Merge metadata into existing contact metadata
+
+**Example Workflow:**
+
+```
+[MitraChatProviderTrigger] → [MitraChatContact:Upsert] → [MitraChatContact:Add Tags]
+```
+
+## Example Workflows
+
+### Trigger → Google Sheets Append
+
+Log every incoming message to a spreadsheet for analytics.
+
+```
+[MitraChatProviderTrigger] → [Google Sheets:Append]
+```
+
+### Trigger → Contact Enrich → Tag Contact
+
+Enrich contact info from an external system and tag the contact.
+
+```
+[MitraChatProviderTrigger]
+  → [MitraChatContact:Get]
+  → [HTTP Request:Enrich]
+  → [MitraChatContact:Upsert]
+  → [MitraChatContact:Add Tags]
+```
+
+### Trigger → Agent → SendTyping → SendMessage
+
+Classic AI reply chain (sidecar or n8n-owned).
+
+```
+[MitraChatProviderTrigger]
+  → [MitraChatAgent]
+  → [MitraChatSendTyping]
+  → [MitraChatSendMessage]
+```
+
+### Trigger → External CRM Lookup → Request Handover
+
+Look up customer in external CRM and request human takeover for VIPs.
+
+```
+[MitraChatProviderTrigger]
+  → [MitraChatConversation:Get]
+  → [HTTP Request:CRM Lookup]
+  → [IF:VIP]
+  → [MitraChatConversation:Request Handover]
+```
+
+### Trigger → Third-Party Logic → SendMessage with CRM Record
+
+Run custom business logic and reply with CRM history enabled.
+
+```
+[MitraChatProviderTrigger]
+  → [Function:Business Logic]
+  → [MitraChatSendMessage]
+      (Record To CRM = true)
+```
+
+## Webhook Security
+
+Outbound webhooks from MitraChat to n8n are signed when a provider has an `outbound_webhook_secret` configured.
+
+**Headers included:**
+
+- `X-MitraChat-Timestamp` — ISO timestamp of the request
+- `X-MitraChat-Signature` — HMAC-SHA256 signature in format `sha256=<hex>`
+
+**Verification pseudocode (n8n Function node):**
+
+```js
+const crypto = require('crypto');
+const secret = 'your-webhook-secret';
+const timestamp = $input.first().json.headers['x-mitrachat-timestamp'];
+const signature = $input.first().json.headers['x-mitrachat-signature'];
+const body = JSON.stringify($input.first().json.body);
+const signedPayload = `${timestamp}.${body}`;
+const expected = `sha256=${crypto.createHmac('sha256', secret).update(signedPayload).digest('hex')}`;
+if (signature !== expected) {
+  throw new Error('Invalid webhook signature');
+}
+return $input.all();
+```
 
 ## Testing Locally
 
@@ -157,7 +329,7 @@ Sends a message back to the user via their original provider.
 
 ```bash
 # In mitrachat-ai-app root
-bun run dev
+pnpm dev
 ```
 
 2. **Get local API credentials:**
@@ -173,7 +345,7 @@ bun run dev
 
 4. **Enable n8n on a provider:**
 
-- In MitraChat, go to Providers → Edit a Telegram provider
+- In MitraChat, go to Providers → Edit a provider
 - Enable "n8n Integration" toggle
 - Add webhook URL from your n8n trigger node
 
@@ -187,7 +359,7 @@ bun run dev
 6. Add **MitraChatSendMessage** node
 7. Connect nodes: Trigger → Agent → SendMessage
 8. Activate workflow
-9. Send message to your Telegram bot
+9. Send message to your provider
 10. Watch execution in n8n
 
 ## Publishing to npm
@@ -198,7 +370,7 @@ bun run dev
 
 ```json
 {
-  "version": "0.1.0"
+  "version": "0.2.0"
 }
 ```
 
@@ -232,9 +404,9 @@ npm publish --access public
 
 Follow semantic versioning:
 
-- `npm version patch` — Bug fixes (0.1.0 → 0.1.1)
-- `npm version minor` — New features (0.1.0 → 0.2.0)
-- `npm version major` — Breaking changes (0.1.0 → 1.0.0)
+- `npm version patch` — Bug fixes (0.2.0 → 0.2.1)
+- `npm version minor` — New features (0.2.0 → 0.3.0)
+- `npm version major` — Breaking changes (0.2.0 → 1.0.0)
 
 Then: `npm publish`
 
@@ -270,13 +442,26 @@ Create `NPM_TOKEN` secret in GitHub repository settings.
 
 The nodes communicate with these MitraChat REST endpoints:
 
-| Endpoint                       | Method | Description                         |
-| ------------------------------ | ------ | ----------------------------------- |
-| `/api/n8n/health`              | GET    | Health check for credential testing |
-| `/api/n8n/agents`              | GET    | List available agents               |
-| `/api/n8n/agents/:id/generate` | POST   | Generate AI response                |
-| `/api/n8n/providers`           | GET    | List providers for trigger setup    |
-| `/api/n8n/providers/:id/send`  | POST   | Send message via provider           |
+| Endpoint                                              | Method | Description                            |
+| ----------------------------------------------------- | ------ | -------------------------------------- |
+| `/api/n8n/health`                                     | GET    | Health check for credential testing    |
+| `/api/n8n/agents`                                     | GET    | List available agents                  |
+| `/api/n8n/agents/:id/generate`                        | POST   | Generate AI response                   |
+| `/api/n8n/providers`                                  | GET    | List providers                         |
+| `/api/n8n/providers/:id/typing`                       | POST   | Send typing indicator                  |
+| `/api/n8n/providers/:id/send`                         | POST   | Send message with optional CRM record  |
+| `/api/n8n/conversations/resolve`                      | GET    | Resolve conversation identity          |
+| `/api/n8n/conversations/:id/messages`                 | GET    | Get conversation messages              |
+| `/api/n8n/conversations/:id/note`                     | POST   | Add internal note                      |
+| `/api/n8n/conversations/:id/tags`                     | POST   | Replace contact tags                   |
+| `/api/n8n/conversations/:id/control-mode`             | POST   | Set control mode                       |
+| `/api/n8n/conversations/:id/request-handover`         | POST   | Request admin handover                 |
+| `/api/n8n/contacts/resolve`                           | GET    | Resolve contact by ID/phone/email      |
+| `/api/n8n/contacts/upsert`                            | POST   | Create or update contact               |
+| `/api/n8n/contacts/:id/tags/add`                      | POST   | Add contact tags                       |
+| `/api/n8n/contacts/:id/tags/remove`                   | POST   | Remove contact tags                    |
+| `/api/n8n/contacts/:id/note`                          | POST   | Add contact note                       |
+| `/api/n8n/contacts/:id/metadata`                      | PATCH  | Merge contact metadata                 |
 
 All endpoints require `X-API-Key` header.
 
@@ -301,6 +486,7 @@ Install peer dependencies: `npm install n8n-workflow`
 - Verify n8n webhook URL is correct in provider settings
 - Check that provider has "n8n enabled" toggle on
 - Look at webhook logs in MitraChat for delivery attempts
+- Check that the trigger node's selected provider matches the incoming payload
 
 ## Local Development & Testing
 
@@ -309,7 +495,7 @@ This section covers how to run n8n locally and test your MitraChat nodes during 
 ### Prerequisites
 
 - Docker installed (recommended) OR n8n CLI installed
-- MitraChat backend running locally (`bun run dev`)
+- MitraChat backend running locally (`pnpm dev`)
 - Built n8n nodes package (`npm run build` in this directory)
 
 ### Step 1: Build the Nodes Package
@@ -384,7 +570,7 @@ Run: `docker-compose up`
 
    ```bash
    cd /Users/izzadev/projects/mitrachat/mitrachat-ai-app
-   bun run dev
+   pnpm dev
    ```
 
    - Frontend: http://localhost:5173
@@ -446,7 +632,7 @@ Save and **Activate** the workflow.
 
 1. Copy the webhook URL from your trigger node
 2. Go to MitraChat → Providers → Edit your provider
-3. Paste webhook URL into **"n8n Webhook URL"** field
+3. Paste webhook URL into **"Outbound Webhook URL"** field
 4. Save
 
 ### Step 7: Test End-to-End
@@ -526,15 +712,6 @@ docker logs -f CONTAINER_ID
 
 # n8n CLI with debug
 n8n start --log-level=debug
-```
-
-**Check webhook delivery in MitraChat:**
-Query the database:
-
-```sql
-SELECT * FROM n8n_webhook_logs
-ORDER BY created_at DESC
-LIMIT 10;
 ```
 
 ### Common Issues

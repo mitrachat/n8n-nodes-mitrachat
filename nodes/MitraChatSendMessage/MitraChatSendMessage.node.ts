@@ -46,6 +46,76 @@ export class MitraChatSendMessage implements INodeType {
         required: true,
         description: "The message to send",
       },
+      {
+        displayName: "Record To CRM",
+        name: "recordToCrm",
+        type: "boolean",
+        default: true,
+        description:
+          "Whether to save the outbound message to MitraChat CRM history. Requires the provider to have CRM enabled.",
+      },
+      {
+        displayName: "Reply To External Message ID",
+        name: "replyToExternalMessageId",
+        type: "string",
+        default: "",
+        description:
+          "Optional external message ID to reply to (provider-dependent support)",
+      },
+      {
+        displayName: "Reply Preview",
+        name: "replyPreview",
+        type: "json",
+        default: '{}',
+        description:
+          "Optional reply preview object. Example: { sender_type: 'contact', sender_name: 'User', content: 'Hello' }",
+      },
+      {
+        displayName: "Attachment Kind",
+        name: "attachmentKind",
+        type: "options",
+        options: [
+          { name: "Image", value: "image" },
+          { name: "File", value: "file" },
+        ],
+        default: "image",
+        displayOptions: {
+          show: {
+            "@version": [1],
+          },
+        },
+        description: "Type of attachment to send",
+      },
+      {
+        displayName: "Attachment Filename",
+        name: "attachmentFilename",
+        type: "string",
+        default: "",
+        description: "Filename for the attachment",
+      },
+      {
+        displayName: "Attachment MIME Type",
+        name: "attachmentMimeType",
+        type: "string",
+        default: "",
+        description: "MIME type of the attachment (e.g. image/png, application/pdf)",
+      },
+      {
+        displayName: "Attachment Size",
+        name: "attachmentSize",
+        type: "number",
+        default: 0,
+        description: "Size of the attachment in bytes",
+      },
+      {
+        displayName: "Attachment Data URL",
+        name: "attachmentDataUrl",
+        type: "string",
+        typeOptions: { rows: 2 },
+        default: "",
+        description:
+          "Base64 data URL for the attachment (data:mime/type;base64,...). Either dataUrl or a server-side storagePath can be used.",
+      },
     ],
   };
 
@@ -55,7 +125,7 @@ export class MitraChatSendMessage implements INodeType {
         this: ILoadOptionsFunctions,
       ): Promise<INodePropertyOptions[]> {
         const credentials = await this.getCredentials("mitraChatApi");
-        const response = await this.helpers.request({
+        const response = await this.helpers.httpRequest({
           method: "GET",
           url: `${credentials.baseUrl}/api/n8n/providers`,
           headers: { "X-API-Key": credentials.apiKey as string },
@@ -79,6 +149,53 @@ export class MitraChatSendMessage implements INodeType {
       const providerId = this.getNodeParameter("providerId", i) as string;
       const chatId = this.getNodeParameter("chatId", i) as string;
       const message = this.getNodeParameter("message", i) as string;
+      const recordToCrm = this.getNodeParameter("recordToCrm", i, true) as boolean;
+      const replyToExternalMessageId = this.getNodeParameter(
+        "replyToExternalMessageId",
+        i,
+        "",
+      ) as string;
+
+      const body: Record<string, unknown> = {
+        chatId,
+        message,
+        recordToCrm,
+      };
+
+      if (replyToExternalMessageId) {
+        body.replyToExternalMessageId = replyToExternalMessageId;
+      }
+
+      const replyPreviewStr = this.getNodeParameter("replyPreview", i, "{}") as string;
+      if (replyPreviewStr && replyPreviewStr.trim() !== "{}") {
+        try {
+          const replyPreview = JSON.parse(replyPreviewStr);
+          if (replyPreview && typeof replyPreview === "object") {
+            body.replyPreview = replyPreview;
+          }
+        } catch {
+          throw new Error("Invalid replyPreview JSON");
+        }
+      }
+
+      const attachmentKind = this.getNodeParameter("attachmentKind", i, "") as string;
+      const attachmentFilename = this.getNodeParameter("attachmentFilename", i, "") as string;
+      const attachmentMimeType = this.getNodeParameter("attachmentMimeType", i, "") as string;
+      const attachmentSize = this.getNodeParameter("attachmentSize", i, 0) as number;
+      const attachmentDataUrl = this.getNodeParameter("attachmentDataUrl", i, "") as string;
+
+      if (attachmentKind && attachmentFilename && attachmentMimeType) {
+        const attachment: Record<string, unknown> = {
+          kind: attachmentKind,
+          filename: attachmentFilename,
+          mimeType: attachmentMimeType,
+          size: attachmentSize,
+        };
+        if (attachmentDataUrl) {
+          attachment.dataUrl = attachmentDataUrl;
+        }
+        body.attachment = attachment;
+      }
 
       const response = await this.helpers.httpRequest({
         method: "POST",
@@ -87,7 +204,7 @@ export class MitraChatSendMessage implements INodeType {
           "X-API-Key": credentials.apiKey as string,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ chatId, message }),
+        body,
         json: true,
       });
 
@@ -96,7 +213,11 @@ export class MitraChatSendMessage implements INodeType {
           success: response.success,
           providerId,
           chatId,
+          externalMessageId: response.externalMessageId ?? null,
+          recordedMessageId: response.recordedMessageId ?? null,
+          crmRecordError: response.crmRecordError ?? null,
         },
+        pairedItem: { item: i },
       });
     }
 

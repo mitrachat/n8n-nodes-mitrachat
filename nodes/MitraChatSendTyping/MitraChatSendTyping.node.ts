@@ -54,7 +54,7 @@ export class MitraChatSendTyping implements INodeType {
         this: ILoadOptionsFunctions,
       ): Promise<INodePropertyOptions[]> {
         const credentials = await this.getCredentials("mitraChatApi");
-        const response = await this.helpers.request({
+        const response = await this.helpers.httpRequest({
           method: "GET",
           url: `${credentials.baseUrl}/api/n8n/providers`,
           headers: { "X-API-Key": credentials.apiKey as string },
@@ -96,6 +96,7 @@ export class MitraChatSendTyping implements INodeType {
           chatId,
           isTyping,
         },
+        pairedItem: { item: i },
       });
     }
 

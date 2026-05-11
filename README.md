@@ -131,7 +131,7 @@ Triggers a workflow when a message arrives from the **selected** provider. Only 
 **Output Fields:**
 
 - `providerId` — Provider that received the message
-- `providerType` — telegram | webchat | gowa | waba | waha
+- `providerType` — telegram | webchat | gowa | waba
 - `chatId` — Conversation identifier
 - `message` — Text content
 - `userId` — User identifier (if available)

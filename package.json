@@ -20,7 +20,7 @@
   },
   "main": "index.js",
   "scripts": {
-    "build": "tsc && cp nodes/MitraChatAgent/MitraChatAgent.svg dist/nodes/MitraChatAgent/ && cp nodes/MitraChatContact/MitraChatContact.svg dist/nodes/MitraChatContact/ && cp nodes/MitraChatConversation/MitraChatConversation.svg dist/nodes/MitraChatConversation/ && cp nodes/MitraChatProviderTrigger/MitraChatProviderTrigger.svg dist/nodes/MitraChatProviderTrigger/ && cp nodes/MitraChatWebhookTrigger/MitraChatWebhookTrigger.svg dist/nodes/MitraChatWebhookTrigger/ && cp nodes/MitraChatSendMessage/MitraChatSendMessage.svg dist/nodes/MitraChatSendMessage/ && cp nodes/MitraChatSendTyping/MitraChatSendTyping.svg dist/nodes/MitraChatSendTyping/",
+    "build": "tsc && cp nodes/MitraChatAgent/MitraChatAgent.svg dist/nodes/MitraChatAgent/ && cp nodes/MitraChatContact/MitraChatContact.svg dist/nodes/MitraChatContact/ && cp nodes/MitraChatConversation/MitraChatConversation.svg dist/nodes/MitraChatConversation/ && cp nodes/MitraChatProviderTrigger/MitraChatProviderTrigger.svg dist/nodes/MitraChatProviderTrigger/ && cp nodes/MitraChatWebhookTrigger/MitraChatWebhookTrigger.svg dist/nodes/MitraChatWebhookTrigger/ && cp nodes/MitraChatToolResponse/MitraChatToolResponse.svg dist/nodes/MitraChatToolResponse/ && cp nodes/MitraChatSendMessage/MitraChatSendMessage.svg dist/nodes/MitraChatSendMessage/ && cp nodes/MitraChatSendTyping/MitraChatSendTyping.svg dist/nodes/MitraChatSendTyping/",
     "dev": "tsc --watch",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build"
@@ -41,6 +41,7 @@
       "dist/nodes/MitraChatConversation/MitraChatConversation.node.js",
       "dist/nodes/MitraChatProviderTrigger/MitraChatProviderTrigger.node.js",
       "dist/nodes/MitraChatWebhookTrigger/MitraChatWebhookTrigger.node.js",
+      "dist/nodes/MitraChatToolResponse/MitraChatToolResponse.node.js",
       "dist/nodes/MitraChatSendMessage/MitraChatSendMessage.node.js",
       "dist/nodes/MitraChatSendTyping/MitraChatSendTyping.node.js"
     ]

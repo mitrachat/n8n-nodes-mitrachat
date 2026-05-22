@@ -1,15 +1,19 @@
 # MitraChat n8n Community Nodes
 
-n8n community nodes for integrating with MitraChat AI platform. Connect Telegram, WhatsApp, and WebChat providers to n8n workflows with AI agent capabilities, conversation control, and contact management.
+n8n community nodes for integrating with the MitraChat AI platform. Connect Telegram, WhatsApp, and WebChat providers to n8n workflows with AI agent capabilities, conversation control, contact management, and external tool invocation.
 
-## Features
+## Nodes
 
-- **MitraChatProviderTrigger** — Webhook trigger for incoming messages from Telegram/WhatsApp/WebChat with provider scoping
-- **MitraChatAgent** — Generate AI responses using MitraChat agents with credit-based billing
-- **MitraChatSendMessage** — Send messages back to users via their original provider with optional CRM recording
-- **MitraChatSendTyping** — Send typing indicators before replies
-- **MitraChatConversation** — Inspect and control CRM conversations (messages, notes, tags, control mode, handover)
-- **MitraChatContact** — Enrich and sync contact records (upsert, tags, notes, metadata)
+| Node | Type | Description |
+|------|------|-------------|
+| **MitraChat Provider Trigger** | Trigger | Webhook trigger scoped to a single provider. Fires on inbound messages from Telegram, WhatsApp, or WebChat. |
+| **MitraChat Webhook Trigger** | Trigger | Generic webhook trigger for any MitraChat event (e.g. `contact.created`, `conversation.message.received`, `blast.campaign.completed`). Supports JSON filtering. |
+| **MitraChat Agent** | Action | Generate AI responses using a MitraChat agent directly. Credits are deducted automatically. |
+| **MitraChat Send Typing** | Action | Send typing indicators to Telegram, WebChat, or GOWA before replying. |
+| **MitraChat Send Message** | Action | Send messages back to users via their original provider with optional CRM recording. |
+| **MitraChat Conversation** | Action | Inspect and control CRM conversations: get messages, add notes, set tags, change control mode, request handover. |
+| **MitraChat Contact** | Action | Enrich and sync contact records: get, upsert, add/remove tags, add notes, update metadata. |
+| **MitraChat Tool Response** | Action | Return external tool results to MitraChat (sync or async mode) for AI agent consumption. |
 
 ## Operating Modes
 
@@ -23,7 +27,7 @@ Provider has n8n webhook enabled, CRM may be enabled, and **no provider default 
 
 - n8n instance (local or cloud)
 - MitraChat account with API access
-- API key generated from MitraChat Settings → Integrations
+- API key generated from MitraChat Settings > Integrations
 
 ## Installation
 
@@ -93,19 +97,29 @@ docker run -it --rm \
 ### 1. Create API Key in MitraChat
 
 1. Log in to your MitraChat dashboard
-2. Go to **Settings** → **Integrations** tab
+2. Go to **Settings** > **Integrations** tab
 3. Click **"Create API Key"**
-4. Enter a name (e.g., "n8n Production")
-5. Copy the API key immediately (shown only once)
+4. Enter a name (e.g. "n8n Production")
+5. Select scopes. Minimum recommended scopes for full n8n usage:
+   - `read:agents` — list agents and generate responses
+   - `invoke:agents` — generate AI responses
+   - `read:conversations` — list providers, resolve conversations
+   - `write:conversations` — send messages, typing indicators, control mode
+   - `read:contacts` — resolve contacts
+   - `write:contacts` — upsert contacts, tags, notes, metadata
+   - `read:webhooks` — list webhook events
+   - `manage:webhooks` — create webhook subscriptions
+   - `admin:*` — wildcard that grants all permissions (backward compatible)
+6. Copy the API key immediately (shown only once)
 
 ### 2. Create Credential in n8n
 
-1. In n8n, go to **Settings** → **Credentials**
+1. In n8n, go to **Settings** > **Credentials**
 2. Click **"Add Credential"**
 3. Search for **"MitraChat API"**
 4. Enter:
    - **API Key**: Your copied key (`mc_live_...`)
-   - **Base URL**: Your MitraChat instance (e.g., `https://api.mitrachat.id`)
+   - **Base URL**: Your MitraChat instance (e.g. `https://api.mitrachat.id`)
 5. Click **"Test"** to verify connectivity
 
 ## Provider Setup Flow
@@ -147,8 +161,25 @@ Triggers a workflow when a message arrives from the **selected** provider. Only 
 **Example Workflow:**
 
 ```
-[MitraChatProviderTrigger] → [MitraChatAgent] → [MitraChatSendTyping] → [MitraChatSendMessage]
+[MitraChatProviderTrigger] -> [MitraChatAgent] -> [MitraChatSendTyping] -> [MitraChatSendMessage]
 ```
+
+### MitraChatWebhookTrigger
+
+Triggers on any MitraChat webhook event. Subscribe to events like `contact.created`, `conversation.message.received`, `blast.campaign.completed`, etc. Supports optional JSON payload filtering.
+
+**Parameters:**
+
+- **Event** — Select from available webhook events (loaded dynamically from MitraChat)
+- **Filter JSON** — Optional. Only trigger if payload matches all key-value pairs. Example: `{"providerId": "abc-123"}`
+
+**Output Fields:**
+
+- `event` — Event key
+- `event_id` — Unique event ID
+- `occurred_at` — ISO timestamp
+- `organization_id` — Organization ID
+- `data` — Event payload
 
 ### MitraChatAgent
 
@@ -218,7 +249,7 @@ Inspect and control MitraChat CRM conversations declaratively.
 **Example Workflow:**
 
 ```
-[MitraChatProviderTrigger] → [MitraChatConversation:Get] → [Google Sheets:Append]
+[MitraChatProviderTrigger] -> [MitraChatConversation:Get] -> [Google Sheets:Append]
 ```
 
 ### MitraChatContact
@@ -237,64 +268,106 @@ Enrich and sync MitraChat contact records declaratively.
 **Example Workflow:**
 
 ```
-[MitraChatProviderTrigger] → [MitraChatContact:Upsert] → [MitraChatContact:Add Tags]
+[MitraChatProviderTrigger] -> [MitraChatContact:Upsert] -> [MitraChatContact:Add Tags]
+```
+
+### MitraChatToolResponse
+
+Return tool results to MitraChat for AI agent consumption. Used when building external tools that n8n workflows expose to MitraChat agents.
+
+**Parameters:**
+
+- **Response Mode** — `sync` (return inline) or `async` (POST to completion endpoint)
+- **Invocation ID** — The `X-Mitrachat-Invocation-Id` from the incoming webhook (async mode only)
+- **Result Data** — JSON result to return (must match the tool's `output_schema`)
+- **Fail on Schema Mismatch?** — Validate result against output schema before sending
+
+**Example Workflow:**
+
+```
+[MitraChatWebhookTrigger: tool.invoked] -> [HTTP Request:Lookup Order] -> [MitraChatToolResponse]
 ```
 
 ## Example Workflows
 
-### Trigger → Google Sheets Append
+### Trigger -> Google Sheets Append
 
 Log every incoming message to a spreadsheet for analytics.
 
 ```
-[MitraChatProviderTrigger] → [Google Sheets:Append]
+[MitraChatProviderTrigger] -> [Google Sheets:Append]
 ```
 
-### Trigger → Contact Enrich → Tag Contact
+### Trigger -> Contact Enrich -> Tag Contact
 
 Enrich contact info from an external system and tag the contact.
 
 ```
 [MitraChatProviderTrigger]
-  → [MitraChatContact:Get]
-  → [HTTP Request:Enrich]
-  → [MitraChatContact:Upsert]
-  → [MitraChatContact:Add Tags]
+  -> [MitraChatContact:Get]
+  -> [HTTP Request:Enrich]
+  -> [MitraChatContact:Upsert]
+  -> [MitraChatContact:Add Tags]
 ```
 
-### Trigger → Agent → SendTyping → SendMessage
+### Trigger -> Agent -> SendTyping -> SendMessage
 
 Classic AI reply chain (sidecar or n8n-owned).
 
 ```
 [MitraChatProviderTrigger]
-  → [MitraChatAgent]
-  → [MitraChatSendTyping]
-  → [MitraChatSendMessage]
+  -> [MitraChatAgent]
+  -> [MitraChatSendTyping]
+  -> [MitraChatSendMessage]
 ```
 
-### Trigger → External CRM Lookup → Request Handover
+### Trigger -> External CRM Lookup -> Request Handover
 
 Look up customer in external CRM and request human takeover for VIPs.
 
 ```
 [MitraChatProviderTrigger]
-  → [MitraChatConversation:Get]
-  → [HTTP Request:CRM Lookup]
-  → [IF:VIP]
-  → [MitraChatConversation:Request Handover]
+  -> [MitraChatConversation:Get]
+  -> [HTTP Request:CRM Lookup]
+  -> [IF:VIP]
+  -> [MitraChatConversation:Request Handover]
 ```
 
-### Trigger → Third-Party Logic → SendMessage with CRM Record
+### Trigger -> Third-Party Logic -> SendMessage with CRM Record
 
 Run custom business logic and reply with CRM history enabled.
 
 ```
 [MitraChatProviderTrigger]
-  → [Function:Business Logic]
-  → [MitraChatSendMessage]
+  -> [Function:Business Logic]
+  -> [MitraChatSendMessage]
       (Record To CRM = true)
 ```
+
+### Webhook Trigger -> External Tool -> Tool Response
+
+Build an external tool that the AI agent can invoke via n8n.
+
+```
+[MitraChatWebhookTrigger: tool.invoked]
+  -> [Code:Validate Input]
+  -> [HTTP Request:External API]
+  -> [Code:Transform Response]
+  -> [MitraChatToolResponse]
+```
+
+## Quick-Start (60 Seconds)
+
+1. **Install nodes** — `npm install n8n-nodes-mitrachat` and restart n8n
+2. **Create credential** — Add "MitraChat API" credential with your API key and base URL
+3. **Add trigger** — Drag `MitraChatProviderTrigger`, select your provider, copy the webhook URL
+4. **Paste webhook** — In MitraChat, go to Providers > Edit > Outbound Webhook URL, paste the URL
+5. **Add agent** — Drag `MitraChatAgent`, select an agent, set Message to `{{ $json.message }}`
+6. **Add send** — Drag `MitraChatSendMessage`, select provider, set Chat ID to `{{ $json.chatId }}`, Message to `{{ $json.response }}`
+7. **Activate** — Save and activate the workflow
+8. **Test** — Send a message to your provider and watch n8n Executions
+
+For a complete 10-step setup guide, see [docs/n8n-integration/SETUP_GUIDE.md](../../docs/n8n-integration/SETUP_GUIDE.md).
 
 ## Webhook Security
 
@@ -304,6 +377,8 @@ Outbound webhooks from MitraChat to n8n are signed when a provider has an `outbo
 
 - `X-MitraChat-Timestamp` — ISO timestamp of the request
 - `X-MitraChat-Signature` — HMAC-SHA256 signature in format `sha256=<hex>`
+
+See [docs/n8n-integration/HMAC_VERIFICATION.md](../../docs/n8n-integration/HMAC_VERIFICATION.md) for full verification instructions in Node.js, Python, and n8n Function nodes.
 
 **Verification pseudocode (n8n Function node):**
 
@@ -321,6 +396,16 @@ if (signature !== expected) {
 return $input.all();
 ```
 
+## Templates
+
+Ready-to-import workflow templates are available in [docs/n8n-integration/templates/](../../docs/n8n-integration/templates/):
+
+- `order-lookup-tool.json` — AI tool invocation: order lookup via external API
+- `calendly-appointment.json` — Create Calendly events from appointment bookings
+- `slack-handover-alert.json` — Slack alert on conversation handover
+- `sheets-event-registration.json` — Log messages to Google Sheets
+- `notion-contact-sync.json` — Sync contacts to Notion CRM
+
 ## Testing Locally
 
 ### Quick Test Setup
@@ -335,8 +420,8 @@ pnpm dev
 2. **Get local API credentials:**
 
 - Create an organization in MitraChat
-- Go to Settings → Integrations → Create API Key
-- Note the API key and your local URL (e.g., `http://localhost:3000`)
+- Go to Settings > Integrations > Create API Key
+- Note the API key and your local URL (e.g. `http://localhost:3000`)
 
 3. **Configure n8n credential:**
 
@@ -345,7 +430,7 @@ pnpm dev
 
 4. **Enable n8n on a provider:**
 
-- In MitraChat, go to Providers → Edit a provider
+- In MitraChat, go to Providers > Edit a provider
 - Enable "n8n Integration" toggle
 - Add webhook URL from your n8n trigger node
 
@@ -357,136 +442,10 @@ pnpm dev
 4. Paste webhook URL in MitraChat provider settings
 5. Add **MitraChatAgent** node
 6. Add **MitraChatSendMessage** node
-7. Connect nodes: Trigger → Agent → SendMessage
+7. Connect nodes: Trigger -> Agent -> SendMessage
 8. Activate workflow
 9. Send message to your provider
 10. Watch execution in n8n
-
-## Publishing to npm
-
-### Preparation
-
-1. **Update version** in `package.json`:
-
-```json
-{
-  "version": "0.2.0"
-}
-```
-
-2. **Ensure build passes:**
-
-```bash
-npm run build
-npm run lint
-```
-
-3. **Create npm account** (if needed):
-   https://www.npmjs.com/signup
-
-### Publishing Steps
-
-```bash
-# Login to npm (first time only)
-npm login
-
-# Build the package
-npm run build
-
-# Publish (dry run first)
-npm publish --dry-run
-
-# If everything looks good, publish
-npm publish --access public
-```
-
-### Version Updates
-
-Follow semantic versioning:
-
-- `npm version patch` — Bug fixes (0.2.0 → 0.2.1)
-- `npm version minor` — New features (0.2.0 → 0.3.0)
-- `npm version major` — Breaking changes (0.2.0 → 1.0.0)
-
-Then: `npm publish`
-
-### Automated Publishing (CI/CD)
-
-Add to `.github/workflows/publish.yml`:
-
-```yaml
-name: Publish to npm
-on:
-  push:
-    tags:
-      - "v*"
-jobs:
-  publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: "18"
-          registry-url: "https://registry.npmjs.org"
-      - run: npm ci
-      - run: npm run build
-      - run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-```
-
-Create `NPM_TOKEN` secret in GitHub repository settings.
-
-## API Endpoints
-
-The nodes communicate with these MitraChat REST endpoints:
-
-| Endpoint                                              | Method | Description                            |
-| ----------------------------------------------------- | ------ | -------------------------------------- |
-| `/api/n8n/health`                                     | GET    | Health check for credential testing    |
-| `/api/n8n/agents`                                     | GET    | List available agents                  |
-| `/api/n8n/agents/:id/generate`                        | POST   | Generate AI response                   |
-| `/api/n8n/providers`                                  | GET    | List providers                         |
-| `/api/n8n/providers/:id/typing`                       | POST   | Send typing indicator                  |
-| `/api/n8n/providers/:id/send`                         | POST   | Send message with optional CRM record  |
-| `/api/n8n/conversations/resolve`                      | GET    | Resolve conversation identity          |
-| `/api/n8n/conversations/:id/messages`                 | GET    | Get conversation messages              |
-| `/api/n8n/conversations/:id/note`                     | POST   | Add internal note                      |
-| `/api/n8n/conversations/:id/tags`                     | POST   | Replace contact tags                   |
-| `/api/n8n/conversations/:id/control-mode`             | POST   | Set control mode                       |
-| `/api/n8n/conversations/:id/request-handover`         | POST   | Request admin handover                 |
-| `/api/n8n/contacts/resolve`                           | GET    | Resolve contact by ID/phone/email      |
-| `/api/n8n/contacts/upsert`                            | POST   | Create or update contact               |
-| `/api/n8n/contacts/:id/tags/add`                      | POST   | Add contact tags                       |
-| `/api/n8n/contacts/:id/tags/remove`                   | POST   | Remove contact tags                    |
-| `/api/n8n/contacts/:id/note`                          | POST   | Add contact note                       |
-| `/api/n8n/contacts/:id/metadata`                      | PATCH  | Merge contact metadata                 |
-
-All endpoints require `X-API-Key` header.
-
-## Troubleshooting
-
-### "Cannot find module 'n8n-workflow'"
-
-Install peer dependencies: `npm install n8n-workflow`
-
-### "401 Unauthorized"
-
-- Verify API key is correct and not expired
-- Check that organization has active subscription
-
-### "Insufficient credits"
-
-- Add credits in MitraChat billing settings
-- Or switch to an agent with lower consumption rate
-
-### Webhook not triggering
-
-- Verify n8n webhook URL is correct in provider settings
-- Check that provider has "n8n enabled" toggle on
-- Look at webhook logs in MitraChat for delivery attempts
-- Check that the trigger node's selected provider matches the incoming payload
 
 ## Local Development & Testing
 
@@ -578,20 +537,20 @@ Run: `docker-compose up`
 
 2. **Create API Key:**
    - Open http://localhost:5173
-   - Go to **Settings** → **Integrations**
+   - Go to **Settings** > **Integrations**
    - Click **"Create API Key"**
    - Name: "n8n Local Test"
    - Copy the key (starts with `mc_live_...`)
 
 3. **Create a Provider with n8n:**
-   - Go to **Providers** → **Create Provider**
+   - Go to **Providers** > **Create Provider**
    - Select **"Web Chat"** (or Telegram)
    - Enable **"n8n Integration"** toggle
    - Leave webhook URL empty (we'll get it from n8n)
 
 ### Step 4: Configure n8n Credentials
 
-1. In n8n, go to **Settings** → **Credentials**
+1. In n8n, go to **Settings** > **Credentials**
 2. Click **"Add Credential"**
 3. Search for **"MitraChat API"**
 4. Fill in:
@@ -607,7 +566,7 @@ Run: `docker-compose up`
 
 - Add the trigger node
 - Select your provider from dropdown
-- Copy the **Webhook URL** (e.g., `http://localhost:5678/webhook-test/...`)
+- Copy the **Webhook URL** (e.g. `http://localhost:5678/webhook-test/...`)
 - **Important:** Use the "Test URL" during development
 
 **Node 2: MitraChatAgent**
@@ -631,7 +590,7 @@ Save and **Activate** the workflow.
 ### Step 6: Connect Webhook
 
 1. Copy the webhook URL from your trigger node
-2. Go to MitraChat → Providers → Edit your provider
+2. Go to MitraChat -> Providers -> Edit your provider
 3. Paste webhook URL into **"Outbound Webhook URL"** field
 4. Save
 
@@ -724,6 +683,132 @@ n8n start --log-level=debug
 | Webhook not triggering | URL mismatch   | Verify webhook URL in provider  |
 | "Connection refused"   | Backend down   | Start MitraChat first           |
 | CORS errors            | Wrong Base URL | Use `host.docker.internal`      |
+
+## Publishing to npm
+
+### Preparation
+
+1. **Update version** in `package.json`:
+
+```json
+{
+  "version": "0.2.0"
+}
+```
+
+2. **Ensure build passes:**
+
+```bash
+npm run build
+npm run lint
+```
+
+3. **Create npm account** (if needed):
+   https://www.npmjs.com/signup
+
+### Publishing Steps
+
+```bash
+# Login to npm (first time only)
+npm login
+
+# Build the package
+npm run build
+
+# Publish (dry run first)
+npm publish --dry-run
+
+# If everything looks good, publish
+npm publish --access public
+```
+
+### Version Updates
+
+Follow semantic versioning:
+
+- `npm version patch` — Bug fixes (0.2.0 -> 0.2.1)
+- `npm version minor` — New features (0.2.0 -> 0.3.0)
+- `npm version major` — Breaking changes (0.2.0 -> 1.0.0)
+
+Then: `npm publish`
+
+### Automated Publishing (CI/CD)
+
+Add to `.github/workflows/publish.yml`:
+
+```yaml
+name: Publish to npm
+on:
+  push:
+    tags:
+      - "v*"
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      - run: npm run build
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+```
+
+Create `NPM_TOKEN` secret in GitHub repository settings.
+
+## API Endpoints
+
+The nodes communicate with these MitraChat REST endpoints:
+
+| Endpoint                                              | Method | Description                            |
+| ----------------------------------------------------- | ------ | -------------------------------------- |
+| `/api/n8n/health`                                     | GET    | Health check for credential testing    |
+| `/api/n8n/agents`                                     | GET    | List available agents                  |
+| `/api/n8n/agents/:id/generate`                        | POST   | Generate AI response                   |
+| `/api/n8n/providers`                                  | GET    | List providers                         |
+| `/api/n8n/providers/:id/typing`                       | POST   | Send typing indicator                  |
+| `/api/n8n/providers/:id/send`                         | POST   | Send message with optional CRM record  |
+| `/api/n8n/conversations/resolve`                      | GET    | Resolve conversation identity          |
+| `/api/n8n/conversations/:id/messages`                 | GET    | Get conversation messages              |
+| `/api/n8n/conversations/:id/note`                     | POST   | Add internal note                      |
+| `/api/n8n/conversations/:id/tags`                     | POST   | Replace contact tags                   |
+| `/api/n8n/conversations/:id/control-mode`             | POST   | Set control mode                       |
+| `/api/n8n/conversations/:id/request-handover`         | POST   | Request admin handover                 |
+| `/api/n8n/contacts/resolve`                           | GET    | Resolve contact by ID/phone/email      |
+| `/api/n8n/contacts/upsert`                            | POST   | Create or update contact               |
+| `/api/n8n/contacts/:id/tags/add`                      | POST   | Add contact tags                       |
+| `/api/n8n/contacts/:id/tags/remove`                   | POST   | Remove contact tags                    |
+| `/api/n8n/contacts/:id/note`                          | POST   | Add contact note                       |
+| `/api/n8n/contacts/:id/metadata`                      | PATCH  | Merge contact metadata                 |
+
+All endpoints require `X-API-Key` header.
+
+## Troubleshooting
+
+### "Cannot find module 'n8n-workflow'"
+
+Install peer dependencies: `npm install n8n-workflow`
+
+### "401 Unauthorized"
+
+- Verify API key is correct and not expired
+- Check that organization has active subscription
+
+### "Insufficient credits"
+
+- Add credits in MitraChat billing settings
+- Or switch to an agent with lower consumption rate
+
+### Webhook not triggering
+
+- Verify n8n webhook URL is correct in provider settings
+- Check that provider has "n8n enabled" toggle on
+- Look at webhook logs in MitraChat for delivery attempts
+- Check that the trigger node's selected provider matches the incoming payload
 
 ## License
 

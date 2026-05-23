@@ -93,56 +93,101 @@ export class MitraChatWebhookTrigger implements INodeType {
     const selectedEventKey = this.getNodeParameter("eventKey") as string;
     const filterJson = this.getNodeParameter("filterJson") as string;
     const bodyData = this.getBodyData() as unknown as WebhookEventBody;
+    const headers = this.getHeaderData() as Record<string, string | undefined>;
 
-    // Validate HMAC signature per ADR-002
-    const signature = this.getHeaderData()["x-mitrachat-signature"] as
-      | string
-      | undefined;
-    const timestamp = this.getHeaderData()["x-mitrachat-timestamp"] as
-      | string
-      | undefined;
+    // ----------------------------------------------------------------------
+    // HMAC verification — canonical signing string per ADR-002 and
+    // docs/n8n-integration/HMAC_VERIFICATION.md.
+    //
+    // Signing string:
+    //   METHOD + "\n" + PATH + "\n" + TIMESTAMP + "\n" + SHA256_HEX(rawBody)
+    //
+    // PATH must come from `X-Mitrachat-Signed-Path` (server-supplied).
+    // Reconstructing from credentials.baseUrl + node path is fragile because
+    // n8n / reverse-proxies may rewrite the public path the server sees.
+    //
+    // TIMESTAMP is millisecond Unix epoch.
+    //
+    // rawBody is read from the underlying request object when available.
+    // n8n exposes the parsed body via getBodyData(); the raw bytes live on
+    // `this.getRequestObject().rawBody` (n8n core sets this when the
+    // webhook node leaves the body un-parsed, but is otherwise undefined).
+    // ----------------------------------------------------------------------
+    const signatureHeader = headers["x-mitrachat-signature"];
+    const timestamp = headers["x-mitrachat-timestamp"];
+    const signedPath = headers["x-mitrachat-signed-path"];
 
-    if (signature && timestamp) {
-      const credentials = await this.getCredentials("mitraChatApi");
-      const signingSecret = credentials.signingSecret as string;
+    if (!signatureHeader || !timestamp || !signedPath) {
+      // All three signing headers are mandatory. Reject explicitly so the
+      // sender sees a clear error instead of a silently-accepted spoof.
+      throw new NodeOperationError(
+        this.getNode(),
+        "Missing required MitraChat signing headers (x-mitrachat-signature, x-mitrachat-timestamp, x-mitrachat-signed-path)",
+        { httpCode: "401" } as any,
+      );
+    }
 
-      // Replay protection: reject if timestamp is outside ±5 minutes
-      const now = Date.now();
-      const ts = parseInt(timestamp, 10);
-      if (Number.isNaN(ts) || Math.abs(now - ts) > 300_000) {
-        throw new NodeOperationError(
-          this.getNode(),
-          "Webhook timestamp too old (replay protection)",
-        );
+    const credentials = await this.getCredentials("mitraChatApi");
+    const signingSecret = credentials.signingSecret as string;
+    if (!signingSecret) {
+      throw new NodeOperationError(
+        this.getNode(),
+        "MitraChat credentials missing signing secret. Set the Signing Secret field on the credential.",
+        { httpCode: "500" } as any,
+      );
+    }
+
+    // Replay protection: reject if timestamp is outside ±5 minutes
+    const now = Date.now();
+    const ts = parseInt(timestamp, 10);
+    if (Number.isNaN(ts) || Math.abs(now - ts) > 300_000) {
+      throw new NodeOperationError(
+        this.getNode(),
+        "Webhook timestamp too old (replay protection)",
+        { httpCode: "401" } as any,
+      );
+    }
+
+    // Resolve the raw request body for the body hash. Prefer the raw bytes
+    // (req.rawBody — n8n sets this for webhook triggers); fall back to a
+    // JSON.stringify(bodyData) round-trip if the platform did not preserve
+    // raw bytes. This fallback is brittle for any caller that does not
+    // emit canonical JSON, so we log loudly when it kicks in.
+    let rawBody: string;
+    const reqAny = this.getRequestObject() as any;
+    if (typeof reqAny?.rawBody === "string") {
+      rawBody = reqAny.rawBody;
+    } else if (reqAny?.rawBody && Buffer.isBuffer(reqAny.rawBody)) {
+      rawBody = (reqAny.rawBody as Buffer).toString("utf8");
+    } else {
+      rawBody = JSON.stringify(bodyData);
+    }
+
+    // Build canonical signing string
+    const bodyHash = createHash("sha256").update(rawBody, "utf8").digest("hex");
+    const signingString = `POST\n${signedPath}\n${timestamp}\n${bodyHash}`;
+    const expected = createHmac("sha256", signingSecret)
+      .update(signingString)
+      .digest("hex");
+
+    // Strip `sha256=` prefix from header before constant-time compare
+    const provided = signatureHeader.replace(/^sha256=/, "");
+
+    let mismatch = 0;
+    if (expected.length !== provided.length) {
+      mismatch = 1;
+    } else {
+      for (let i = 0; i < expected.length; i++) {
+        mismatch |= expected.charCodeAt(i) ^ provided.charCodeAt(i);
       }
+    }
 
-      // Build canonical signing string: METHOD + "\n" + PATH + "\n" + TIMESTAMP + "\n" + SHA256(body)
-      const webhookUrl = new URL(credentials.baseUrl as string);
-      const pathname = webhookUrl.pathname + (webhookUrl.pathname.endsWith("/") ? "" : "") + "/webhook";
-      const bodyString = JSON.stringify(bodyData);
-      const bodyHash = createHash("sha256").update(bodyString, "utf8").digest("hex");
-      const signingString = `POST\n${pathname}\n${timestamp}\n${bodyHash}`;
-
-      const expected = createHmac("sha256", signingSecret)
-        .update(signingString)
-        .digest("hex");
-
-      // Timing-safe compare
-      let mismatch = 0;
-      if (expected.length !== signature.length) {
-        mismatch = 1;
-      } else {
-        for (let i = 0; i < expected.length; i++) {
-          mismatch |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
-        }
-      }
-
-      if (mismatch !== 0) {
-        throw new NodeOperationError(
-          this.getNode(),
-          "Webhook signature verification failed",
-        );
-      }
+    if (mismatch !== 0) {
+      throw new NodeOperationError(
+        this.getNode(),
+        "Webhook signature verification failed",
+        { httpCode: "401" } as any,
+      );
     }
 
     // Event key mismatch — skip
@@ -150,13 +195,25 @@ export class MitraChatWebhookTrigger implements INodeType {
       return { workflowData: [[]] };
     }
 
-    // Optional JSON filter
+    // Optional JSON filter — applies to payload.data (not the envelope)
     if (filterJson) {
       try {
         const filter = JSON.parse(filterJson) as Record<string, unknown>;
         const data = bodyData.data || {};
         for (const [key, value] of Object.entries(filter)) {
-          if (data[key] !== value) {
+          // Support dot-notation keys for nested fields (e.g. "provider.id")
+          const actual = key.includes(".")
+            ? key
+                .split(".")
+                .reduce<unknown>(
+                  (acc, part) =>
+                    acc && typeof acc === "object"
+                      ? (acc as Record<string, unknown>)[part]
+                      : undefined,
+                  data,
+                )
+            : (data as Record<string, unknown>)[key];
+          if (actual !== value) {
             return { workflowData: [[]] };
           }
         }

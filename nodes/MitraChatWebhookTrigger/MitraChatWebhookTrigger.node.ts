@@ -1,11 +1,13 @@
-import type {
-  INodeType,
-  INodeTypeDescription,
-  IWebhookFunctions,
-  IWebhookResponseData,
-  ILoadOptionsFunctions,
-  INodePropertyOptions,
+import {
+  type INodeType,
+  type INodeTypeDescription,
+  type IWebhookFunctions,
+  type IWebhookResponseData,
+  type ILoadOptionsFunctions,
+  type INodePropertyOptions,
+  NodeOperationError,
 } from "n8n-workflow";
+import { createHash, createHmac } from "crypto";
 
 interface WebhookEventBody {
   event: string;
@@ -92,13 +94,55 @@ export class MitraChatWebhookTrigger implements INodeType {
     const filterJson = this.getNodeParameter("filterJson") as string;
     const bodyData = this.getBodyData() as unknown as WebhookEventBody;
 
-    // Validate HMAC signature if present
+    // Validate HMAC signature per ADR-002
     const signature = this.getHeaderData()["x-mitrachat-signature"] as
       | string
       | undefined;
-    if (signature) {
-      // Signature verification is handled server-side before delivery.
-      // n8n nodes trust the payload because the webhook URL is secret.
+    const timestamp = this.getHeaderData()["x-mitrachat-timestamp"] as
+      | string
+      | undefined;
+
+    if (signature && timestamp) {
+      const credentials = await this.getCredentials("mitraChatApi");
+      const signingSecret = credentials.signingSecret as string;
+
+      // Replay protection: reject if timestamp is outside ±5 minutes
+      const now = Date.now();
+      const ts = parseInt(timestamp, 10);
+      if (Number.isNaN(ts) || Math.abs(now - ts) > 300_000) {
+        throw new NodeOperationError(
+          this.getNode(),
+          "Webhook timestamp too old (replay protection)",
+        );
+      }
+
+      // Build canonical signing string: METHOD + "\n" + PATH + "\n" + TIMESTAMP + "\n" + SHA256(body)
+      const webhookUrl = new URL(credentials.baseUrl as string);
+      const pathname = webhookUrl.pathname + (webhookUrl.pathname.endsWith("/") ? "" : "") + "/webhook";
+      const bodyString = JSON.stringify(bodyData);
+      const bodyHash = createHash("sha256").update(bodyString, "utf8").digest("hex");
+      const signingString = `POST\n${pathname}\n${timestamp}\n${bodyHash}`;
+
+      const expected = createHmac("sha256", signingSecret)
+        .update(signingString)
+        .digest("hex");
+
+      // Timing-safe compare
+      let mismatch = 0;
+      if (expected.length !== signature.length) {
+        mismatch = 1;
+      } else {
+        for (let i = 0; i < expected.length; i++) {
+          mismatch |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+        }
+      }
+
+      if (mismatch !== 0) {
+        throw new NodeOperationError(
+          this.getNode(),
+          "Webhook signature verification failed",
+        );
+      }
     }
 
     // Event key mismatch — skip

@@ -143,7 +143,10 @@ export class MitraChatContactV2 implements INodeType {
         displayName: "Tags",
         name: "tags",
         type: "string",
-        default: [],
+        // n8n collects multiple string values into an array; per-item default
+        // must be the type's empty value, not the collection's. `default: []`
+        // on a `string`-typed field crashes the property editor.
+        default: "",
         typeOptions: { multipleValues: true },
         description: "Tags to add or remove",
         displayOptions: { show: { operation: ["addTags", "removeTags"] } },

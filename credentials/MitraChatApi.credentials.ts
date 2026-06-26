@@ -8,7 +8,7 @@ import type {
 export class MitraChatApi implements ICredentialType {
   name = "mitraChatApi";
   displayName = "MitraChat API";
-  documentationUrl = "https://docs.mitrachat.id/n8n";
+  documentationUrl = "https://mitrachat.id/dashboard/docs/integrations/n8n";
 
   properties: INodeProperties[] = [
     {
@@ -24,7 +24,7 @@ export class MitraChatApi implements ICredentialType {
       displayName: "Base URL",
       name: "baseUrl",
       type: "string",
-      default: "https://api.mitrachat.id",
+      default: "https://mitrachat.id",
       required: true,
       description: "Your MitraChat instance URL",
     },

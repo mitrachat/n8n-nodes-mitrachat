@@ -119,7 +119,7 @@ docker run -it --rm \
 3. Search for **"MitraChat API"**
 4. Enter:
    - **API Key**: Your copied key (`mc_live_...`)
-   - **Base URL**: Your MitraChat instance (e.g. `https://api.mitrachat.id`)
+   - **Base URL**: Your MitraChat instance (e.g. `https://mitrachat.id`)
 5. Click **"Test"** to verify connectivity
 
 ## Provider Setup Flow
@@ -816,6 +816,6 @@ MIT
 
 ## Support
 
-- Documentation: https://docs.mitrachat.id/n8n
+- Documentation: https://mitrachat.id/dashboard/docs/integrations/n8n
 - Issues: https://github.com/mitrachat/n8n-nodes-mitrachat/issues
 - Email: support@mitrachat.id
